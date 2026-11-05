@@ -12,7 +12,7 @@ import java.util.UUID;
 public class OrderService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final JsonMapper  jsonMapper;
+    private final JsonMapper jsonMapper;
 
     public OrderService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper) {
         this.jdbcTemplate = jdbcTemplate;
@@ -34,23 +34,22 @@ public class OrderService {
         );
 
         jdbcTemplate.update("""
-                INSERT INTO local_task_message (
-                    task_id, biz_id, topic, payload
-                )
-                VALUES (?, ?, ?, ?)
-                """,
-                taskId,
+                        INSERT INTO biz_order (
+                            order_no, user_id, pay_amount
+                        )
+                        VALUES (?, ?, ?)
+                        """,
                 request.orderNo(),
-                "order_created",
-                payload
+                request.userId(),
+                request.payAmount()
         );
 
         jdbcTemplate.update("""
-                INSERT INTO local_task_message (
-                    task_id, biz_id, topic, payload
-                )
-                VALUES (?, ?, ?, ?)
-                """,
+                        INSERT INTO local_task_message (
+                            task_id, biz_id, topic, payload
+                        )
+                        VALUES (?, ?, ?, ?)
+                        """,
                 taskId,
                 request.orderNo(),
                 "order_created",
