@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: local-task-message-learning
+
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/local_task_message_learning
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
