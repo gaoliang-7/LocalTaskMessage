@@ -61,7 +61,6 @@ public class OrderService {
 
         publisher.publishEvent(new TaskMessageCreatedEvent(taskId));
 
-        throw new IllegalStateException("验证回滚后不会发送消息");
     }
 
 }

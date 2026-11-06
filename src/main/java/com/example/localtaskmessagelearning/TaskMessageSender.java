@@ -30,42 +30,103 @@ public class TaskMessageSender {
         this.provider = provider;
     }
 
-    public void send(String taskId) throws ClientException {
+//    public void send(String taskId) throws ClientException {
+//        List<PendingMessage> tasks = jdbcTemplate.query("""
+//                SELECT topic, payload
+//                FROM local_task_message
+//                WHERE task_id = ? AND status = 'PENDING'
+//                """,
+//                (rs, rowNum) -> new PendingMessage(
+//                        rs.getString("topic"), rs.getString("payload")),
+//                taskId
+//        );
+//
+//        if (tasks.isEmpty()) return;
+//
+//        PendingMessage task = tasks.get(0);
+//
+//        Message message = provider.newMessageBuilder()
+//                .setTopic(task.topic())
+//                .setKeys(taskId)
+//                .setBody(task.payload().getBytes(StandardCharsets.UTF_8))
+//                .build();
+//
+//        SendReceipt receipt = producer.send(message);
+//
+//        int updated = jdbcTemplate.update("""
+//                UPDATE local_task_message
+//                SET status = 'SENT', last_error = NULL,
+//                    update_time = CURRENT_TIMESTAMP
+//                WHERE task_id = ? AND status = 'PENDING'
+//                """, taskId);
+//
+//        if (updated != 1) {
+//            throw new IllegalStateException("消息已发送，但任务状态更新异常，taskId=" + taskId);
+//        }
+//
+//        log.info("消息已发送并标记SENT，taskId={}，messageId={}",
+//                taskId, receipt.getMessageId());
+//    }
+
+    public synchronized void send(String taskId) throws ClientException{
+
         List<PendingMessage> tasks = jdbcTemplate.query("""
-                SELECT topic, payload
-                FROM local_task_message
-                WHERE task_id = ? AND status = 'PENDING'
-                """,
+            SELECT topic, payload
+            FROM local_task_message
+            WHERE task_id = ? AND status = 'PENDING'
+              AND next_retry_time <= CURRENT_TIMESTAMP
+            """,
                 (rs, rowNum) -> new PendingMessage(
                         rs.getString("topic"), rs.getString("payload")),
                 taskId
         );
 
-        if (taskId == null) return;
+        if (tasks.isEmpty()) {
+            return;
+        }
 
         PendingMessage task = tasks.get(0);
 
-        Message message = provider.newMessageBuilder()
-                .setTopic(task.topic())
-                .setKeys(taskId)
-                .setBody(task.payload().getBytes(StandardCharsets.UTF_8))
-                .build();
+        try {
+            Message message = provider.newMessageBuilder()
+                    .setTopic(task.topic())
+                    .setKeys(taskId)
+                    .setBody(task.payload().getBytes(StandardCharsets.UTF_8))
+                    .build();
 
-        SendReceipt receipt = producer.send(message);
+            SendReceipt receipt = producer.send(message);
 
-        int updated = jdbcTemplate.update("""
+            int updated = jdbcTemplate.update("""
                 UPDATE local_task_message
                 SET status = 'SENT', last_error = NULL,
                     update_time = CURRENT_TIMESTAMP
                 WHERE task_id = ? AND status = 'PENDING'
                 """, taskId);
 
-        if (updated != 1) {
-            throw new IllegalStateException("消息已发送，但任务状态更新异常，taskId=" + taskId);
+            if (updated != 1) {
+                throw new IllegalStateException("消息已发送，但任务状态更新异常，taskId=" + taskId);
+            }
+
+            log.info("消息已发送并标记SENT，taskId={}，messageId={}",
+                    taskId, receipt.getMessageId());
+
+        } catch (Exception failure) {
+            try {
+                jdbcTemplate.update("""
+                    UPDATE local_task_message
+                    SET retry_count = retry_count + 1,
+                        next_retry_time = TIMESTAMPADD(SECOND, 10, CURRENT_TIMESTAMP),
+                        last_error = LEFT(?, 512),
+                        update_time = CURRENT_TIMESTAMP
+                    WHERE task_id = ? AND status = 'PENDING'
+                    """, failure.toString(), taskId);
+            } catch (Exception recordFailure) {
+                failure.addSuppressed(recordFailure);
+            }
+
+            throw failure;
         }
 
-        log.info("消息已发送并标记SENT，taskId={}，messageId={}",
-                taskId, receipt.getMessageId());
     }
 
     private record PendingMessage(String topic, String payload){}
