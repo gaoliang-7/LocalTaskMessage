@@ -1,5 +1,6 @@
 package com.example.localtaskmessagelearning;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,10 +14,12 @@ public class OrderService {
 
     private final JdbcTemplate jdbcTemplate;
     private final JsonMapper jsonMapper;
+    private final ApplicationEventPublisher publisher;
 
-    public OrderService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper) {
+    public OrderService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper, ApplicationEventPublisher publisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
+        this.publisher = publisher;
     }
 
     @Transactional
@@ -55,6 +58,10 @@ public class OrderService {
                 "order_created",
                 payload
         );
+
+        publisher.publishEvent(new TaskMessageCreatedEvent(taskId));
+
+        throw new IllegalStateException("验证回滚后不会发送消息");
     }
 
 }
