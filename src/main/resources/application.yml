@@ -8,4 +8,4 @@ spring:
     password: ${DB_PASSWORD}
 
 rocketmq:
-  endpoints: 127.0.0.1:8081
+  endpoints: ${ROCKETMQ_ENDPOINTS:127.0.0.1:8081}
