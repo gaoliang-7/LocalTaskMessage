@@ -26,9 +26,15 @@ public class TaskMessageRetryJob {
         List<String> taskIds = jdbcTemplate.queryForList("""
                 SELECT task_id
                 FROM local_task_message
-                WHERE status = 'PENDING'
-                  AND next_retry_time <= CURRENT_TIMESTAMP
-                ORDER BY next_retry_time, id
+                WHERE (
+                    status = 'PENDING'
+                    AND next_retry_time <= CURRENT_TIMESTAMP(3)
+                )
+                OR (
+                    status = 'PROCESSING'
+                    AND locked_until <= CURRENT_TIMESTAMP(3)
+                )
+                ORDER BY id
                 LIMIT 20
                 """, String.class);
 
