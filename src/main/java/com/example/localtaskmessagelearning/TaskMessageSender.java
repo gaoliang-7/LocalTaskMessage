@@ -216,22 +216,39 @@ public class TaskMessageSender {
 
         } catch (Exception failure) {
             try {
-                jdbcTemplate.update("""
-                    UPDATE local_task_message
-                    SET status = 'PENDING',
-                        retry_count = retry_count + 1,
-                        next_retry_time = TIMESTAMPADD(
-                            SECOND, 10, CURRENT_TIMESTAMP
-                        ),
-                        last_error = LEFT(?, 512),
-                        lock_token = NULL,
-                        locked_until = NULL,
-                        update_time = CURRENT_TIMESTAMP
-                    WHERE task_id = ?
-                      AND status = 'PROCESSING'
-                      AND lock_token = ?
-                      AND locked_until > CURRENT_TIMESTAMP(3)
-                    """, failure.toString(), taskId, token);
+                int recorded = jdbcTemplate.update("""
+                UPDATE local_task_message
+                SET status = CASE
+                        WHEN retry_count + 1 >= 5 THEN 'FAILED'
+                        ELSE 'PENDING'
+                    END,
+                    next_retry_time = CASE
+                        WHEN retry_count + 1 >= 5 THEN next_retry_time
+                        ELSE TIMESTAMPADD(
+                            SECOND,
+                            LEAST(60, 10 * POWER(2, retry_count)),
+                            CURRENT_TIMESTAMP
+                        )
+                    END,
+                    last_error = LEFT(?, 512),
+                    lock_token = NULL,
+                    locked_until = NULL,
+                    update_time = CURRENT_TIMESTAMP,
+                    retry_count = retry_count + 1
+                WHERE task_id = ?
+                  AND status = 'PROCESSING'
+                  AND lock_token = ?
+                  AND locked_until > CURRENT_TIMESTAMP(3)
+                """,
+                        failure.toString(),
+                        taskId,
+                        token
+                );
+
+                if (recorded == 0) {
+                    log.warn("租约已失效，本次失败不回写，taskId={}", taskId);
+                }
+
             } catch (Exception recordFailure) {
                 failure.addSuppressed(recordFailure);
             }
