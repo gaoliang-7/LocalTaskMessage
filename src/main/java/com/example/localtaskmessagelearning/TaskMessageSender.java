@@ -22,13 +22,18 @@ public class TaskMessageSender {
     private final JdbcTemplate jdbcTemplate;
     private final Producer producer;
     private final ClientServiceProvider provider;
+    private final TaskMessageProperties properties;
 
     public TaskMessageSender(JdbcTemplate jdbcTemplate,
                              Producer producer,
-                             ClientServiceProvider provider) {
+                             ClientServiceProvider provider,
+                             TaskMessageProperties properties) {
         this.jdbcTemplate = jdbcTemplate;
         this.producer = producer;
         this.provider = provider;
+        this.properties = properties;
+
+        log.info("消息任务配置：{}", properties);
     }
 
 //    public void send(String taskId) throws ClientException {
@@ -134,26 +139,30 @@ public class TaskMessageSender {
         String token = UUID.randomUUID().toString();
 
         int claimed = jdbcTemplate.update("""
-            UPDATE local_task_message
-            SET status = 'PROCESSING',
-                lock_token = ?,
-                locked_until = TIMESTAMPADD(
-                    SECOND, 30, CURRENT_TIMESTAMP(3)
-                ),
-                update_time = CURRENT_TIMESTAMP
-            WHERE task_id = ?
-              AND (
-                (
-                    status = 'PENDING'
-                    AND next_retry_time <= CURRENT_TIMESTAMP(3)
-                )
-                OR
-                (
-                    status = 'PROCESSING'
-                    AND locked_until <= CURRENT_TIMESTAMP(3)
-                )
-              )
-            """, token, taskId);
+                        UPDATE local_task_message
+                        SET status = 'PROCESSING',
+                            lock_token = ?,
+                            locked_until = TIMESTAMPADD(
+                                SECOND, ?, CURRENT_TIMESTAMP(3)
+                            ),
+                            update_time = CURRENT_TIMESTAMP
+                        WHERE task_id = ?
+                          AND (
+                            (
+                                status = 'PENDING'
+                                AND next_retry_time <= CURRENT_TIMESTAMP(3)
+                            )
+                            OR
+                            (
+                                status = 'PROCESSING'
+                                AND locked_until <= CURRENT_TIMESTAMP(3)
+                            )
+                          )
+                        """,
+                token,
+                properties.leaseSeconds(),
+                taskId
+        );
 
         if (claimed != 1) return;
 
@@ -162,13 +171,13 @@ public class TaskMessageSender {
         // 固定30s租约，发送经常超过租期时加入续期
         try {
             List<PendingMessage> tasks = jdbcTemplate.query("""
-                SELECT topic, payload
-                FROM local_task_message
-                WHERE task_id = ?
-                  AND status = 'PROCESSING'
-                  AND lock_token = ?
-                  AND locked_until > CURRENT_TIMESTAMP(3)
-                """,
+                            SELECT topic, payload
+                            FROM local_task_message
+                            WHERE task_id = ?
+                              AND status = 'PROCESSING'
+                              AND lock_token = ?
+                              AND locked_until > CURRENT_TIMESTAMP(3)
+                            """,
                     (rs, rowNum) -> new PendingMessage(
                             rs.getString("topic"),
                             rs.getString("payload")
@@ -193,17 +202,17 @@ public class TaskMessageSender {
             SendReceipt receipt = producer.send(message);
 
             int updated = jdbcTemplate.update("""
-                UPDATE local_task_message
-                SET status = 'SENT',
-                    lock_token = NULL,
-                    locked_until = NULL,
-                    last_error = NULL,
-                    update_time = CURRENT_TIMESTAMP
-                WHERE task_id = ?
-                  AND status = 'PROCESSING'
-                  AND lock_token = ?
-                  AND locked_until > CURRENT_TIMESTAMP(3)
-                """, taskId, token);
+                    UPDATE local_task_message
+                    SET status = 'SENT',
+                        lock_token = NULL,
+                        locked_until = NULL,
+                        last_error = NULL,
+                        update_time = CURRENT_TIMESTAMP
+                    WHERE task_id = ?
+                      AND status = 'PROCESSING'
+                      AND lock_token = ?
+                      AND locked_until > CURRENT_TIMESTAMP(3)
+                    """, taskId, token);
 
             if (updated != 1) {
                 throw new IllegalStateException(
@@ -217,29 +226,33 @@ public class TaskMessageSender {
         } catch (Exception failure) {
             try {
                 int recorded = jdbcTemplate.update("""
-                UPDATE local_task_message
-                SET status = CASE
-                        WHEN retry_count + 1 >= 5 THEN 'FAILED'
-                        ELSE 'PENDING'
-                    END,
-                    next_retry_time = CASE
-                        WHEN retry_count + 1 >= 5 THEN next_retry_time
-                        ELSE TIMESTAMPADD(
-                            SECOND,
-                            LEAST(60, 10 * POWER(2, retry_count)),
-                            CURRENT_TIMESTAMP
-                        )
-                    END,
-                    last_error = LEFT(?, 512),
-                    lock_token = NULL,
-                    locked_until = NULL,
-                    update_time = CURRENT_TIMESTAMP,
-                    retry_count = retry_count + 1
-                WHERE task_id = ?
-                  AND status = 'PROCESSING'
-                  AND lock_token = ?
-                  AND locked_until > CURRENT_TIMESTAMP(3)
-                """,
+                                UPDATE local_task_message
+                                SET status = CASE
+                                        WHEN retry_count + 1 >= ? THEN 'FAILED'
+                                        ELSE 'PENDING'
+                                    END,
+                                    next_retry_time = CASE
+                                        WHEN retry_count + 1 >= ? THEN next_retry_time
+                                        ELSE TIMESTAMPADD(
+                                            SECOND,
+                                            LEAST(?, ? * POWER(2, retry_count)),
+                                            CURRENT_TIMESTAMP
+                                        )
+                                    END,
+                                    last_error = LEFT(?, 512),
+                                    lock_token = NULL,
+                                    locked_until = NULL,
+                                    update_time = CURRENT_TIMESTAMP,
+                                    retry_count = retry_count + 1
+                                WHERE task_id = ?
+                                  AND status = 'PROCESSING'
+                                  AND lock_token = ?
+                                  AND locked_until > CURRENT_TIMESTAMP(3)
+                                """,
+                        properties.maxFailures(),
+                        properties.maxFailures(),
+                        properties.maxDelaySeconds(),
+                        properties.initialDelaySeconds(),
                         failure.toString(),
                         taskId,
                         token
@@ -252,10 +265,12 @@ public class TaskMessageSender {
             } catch (Exception recordFailure) {
                 failure.addSuppressed(recordFailure);
             }
+
             throw failure;
         }
     }
 
-    private record PendingMessage(String topic, String payload){}
+    private record PendingMessage(String topic, String payload) {
+    }
 
 }

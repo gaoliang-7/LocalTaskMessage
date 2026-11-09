@@ -9,3 +9,9 @@ spring:
 
 rocketmq:
   endpoints: ${ROCKETMQ_ENDPOINTS:127.0.0.1:8081}
+
+task-message:
+  max-failures: 5
+  initial-delay-seconds: 10
+  max-delay-seconds: 60
+  lease-seconds: 30

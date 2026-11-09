@@ -1,6 +1,7 @@
 package com.example.localtaskmessagelearning;
 
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,6 +22,8 @@ public class TaskMessageAdminController {
         return adminService.findFailed();
     }
 
+    @PostMapping("/{taskId}/retry")
+    @ResponseStatus(HttpStatus.ACCEPTED)
     public Map<String, String> retry(
             @PathVariable String taskId,
             @Valid @RequestBody RetryTaskRequest request) {
