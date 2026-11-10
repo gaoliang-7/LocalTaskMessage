@@ -6,7 +6,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TaskMessageAdminService {
@@ -109,6 +112,54 @@ public class TaskMessageAdminService {
                 task.lastError()
         );
 
+    }
+
+    public List<TaskMessageView> findByStatus(TaskMessageStatus status) {
+        return jdbcTemplate.query("""
+            SELECT task_id, biz_id, topic, status, retry_count,
+                   next_retry_time, locked_until, last_error, update_time
+            FROM local_task_message
+            WHERE status = ?
+            ORDER BY id DESC
+            LIMIT 20
+            """,
+                (rs, rowNum) -> new TaskMessageView(
+                        rs.getString("task_id"),
+                        rs.getString("biz_id"),
+                        rs.getString("topic"),
+                        TaskMessageStatus.valueOf(rs.getString("status")),
+                        rs.getInt("retry_count"),
+                        rs.getObject("next_retry_time", LocalDateTime.class),
+                        rs.getObject("locked_until", LocalDateTime.class),
+                        rs.getString("last_error"),
+                        rs.getObject("update_time", LocalDateTime.class)
+                ),
+                status.name()
+        );
+    }
+
+
+    public Map<String, Long> countByStatus() {
+        Map<String, Long> counts = new LinkedHashMap<>();
+
+        for (TaskMessageStatus status : TaskMessageStatus.values()) {
+            counts.put(status.name(), 0L);
+        }
+
+        jdbcTemplate.query("""
+            SELECT status, COUNT(*) AS task_count
+            FROM local_task_message
+            GROUP BY status
+            """,
+                rs -> {
+                    counts.put(
+                            rs.getString("status"),
+                            rs.getLong("task_count")
+                    );
+                }
+        );
+
+        return counts;
     }
 
     private record RetrySnapshot(

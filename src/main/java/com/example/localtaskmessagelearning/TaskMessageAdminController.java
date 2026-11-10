@@ -36,4 +36,14 @@ public class TaskMessageAdminController {
         );
 
     }
+
+    @GetMapping
+    public List<TaskMessageView> list(@RequestParam TaskMessageStatus status) {
+        return adminService.findByStatus(status);
+    }
+
+    @GetMapping("/stats")
+    public Map<String, Long> stats() {
+        return adminService.countByStatus();
+    }
 }
