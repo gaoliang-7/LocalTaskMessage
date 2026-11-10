@@ -1,10 +1,10 @@
 package com.example.localtaskmessagelearning;
 
-import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.*;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
+
+import java.util.Set;
 
 @Validated
 @ConfigurationProperties(
@@ -22,7 +22,11 @@ public record TaskMessageProperties(
         int maxDelaySeconds,
 
         @Min(1) @Max(3600)
-        int leaseSeconds
+        int leaseSeconds,
+
+        @NotEmpty
+        Set<@NotNull @Min(0) @Max(1) Integer> retryHouseNumbers
+
 ) {
     @AssertTrue(
             message = "max-delay-seconds 必须大于等于 initial-delay-seconds"
