@@ -115,15 +115,29 @@ public class TaskMessageAdminService {
     }
 
     public List<TaskMessageView> findByStatus(TaskMessageStatus status) {
-        return jdbcTemplate.query("""
-            SELECT task_id, biz_id, topic, status, retry_count,
+        return findPage(status, null, 20).items();
+    }
+
+    public TaskMessagePage findPage(TaskMessageStatus status, Long beforeId, int limit) {
+        if (limit < 1 || limit >100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须在 1 到 100 之间");
+        }
+
+        if (beforeId != null && beforeId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeId 必须大于 0");
+        }
+
+        long upperId = beforeId == null ? Long.MAX_VALUE : beforeId - 1;
+
+        List<PageRow> rows = jdbcTemplate.query("""
+            SELECT id, task_id, biz_id, topic, status, retry_count,
                    next_retry_time, locked_until, last_error, update_time
             FROM local_task_message
-            WHERE status = ?
+            WHERE status = ? AND id <= ?
             ORDER BY id DESC
-            LIMIT 20
+            LIMIT ?
             """,
-                (rs, rowNum) -> new TaskMessageView(
+                (rs, rowNum) -> new PageRow(rs.getLong("id"), new TaskMessageView(
                         rs.getString("task_id"),
                         rs.getString("biz_id"),
                         rs.getString("topic"),
@@ -133,9 +147,20 @@ public class TaskMessageAdminService {
                         rs.getObject("locked_until", LocalDateTime.class),
                         rs.getString("last_error"),
                         rs.getObject("update_time", LocalDateTime.class)
-                ),
-                status.name()
+                )),
+                status.name(), upperId, limit + 1
         );
+
+        List<TaskMessageView> items = rows.stream()
+                .limit(limit)
+                .map(PageRow::item)
+                .toList();
+
+        String nextBeforeId = rows.size() > limit
+                ? Long.toString(rows.get(limit - 1).id())
+                : null;
+
+        return new TaskMessagePage(items, nextBeforeId);
     }
 
 
@@ -168,5 +193,7 @@ public class TaskMessageAdminService {
             int retryCount,
             String lastError
     ) {}
+
+    private record PageRow(long id, TaskMessageView item) {}
 
 }
