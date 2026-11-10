@@ -7,6 +7,7 @@ import org.apache.rocketmq.client.apis.producer.Producer;
 import org.apache.rocketmq.client.apis.producer.SendReceipt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -168,6 +169,8 @@ public class TaskMessageSender {
 
         log.info("抢占任务成功，taskId={}，token={}", taskId, token);
 
+        SendReceipt receipt;
+
         // 固定30s租约，发送经常超过租期时加入续期
         try {
             List<PendingMessage> tasks = jdbcTemplate.query("""
@@ -192,36 +195,13 @@ public class TaskMessageSender {
             }
 
             PendingMessage task = tasks.get(0);
-
             Message message = provider.newMessageBuilder()
                     .setTopic(task.topic())
                     .setKeys(taskId)
                     .setBody(task.payload().getBytes(StandardCharsets.UTF_8))
                     .build();
 
-            SendReceipt receipt = producer.send(message);
-
-            int updated = jdbcTemplate.update("""
-                    UPDATE local_task_message
-                    SET status = 'SENT',
-                        lock_token = NULL,
-                        locked_until = NULL,
-                        last_error = NULL,
-                        update_time = CURRENT_TIMESTAMP
-                    WHERE task_id = ?
-                      AND status = 'PROCESSING'
-                      AND lock_token = ?
-                      AND locked_until > CURRENT_TIMESTAMP(3)
-                    """, taskId, token);
-
-            if (updated != 1) {
-                throw new IllegalStateException(
-                        "消息已发送，但租约失效，taskId=" + taskId
-                );
-            }
-
-            log.info("消息已发送并标记SENT，taskId={}，messageId={}",
-                    taskId, receipt.getMessageId());
+            receipt = producer.send(message);
 
         } catch (Exception failure) {
             try {
@@ -268,6 +248,37 @@ public class TaskMessageSender {
 
             throw failure;
         }
+
+        int updated;
+        try {
+            updated = jdbcTemplate.update("""
+                    UPDATE local_task_message
+                    SET status = 'SENT',
+                        lock_token = NULL,
+                        locked_until = NULL,
+                        last_error = NULL,
+                        update_time = CURRENT_TIMESTAMP
+                    WHERE task_id = ?
+                      AND status = 'PROCESSING'
+                      AND lock_token = ?
+                      AND locked_until > CURRENT_TIMESTAMP(3)
+                    """, taskId, token);
+        } catch (DataAccessException failure) {
+            throw new IllegalStateException(
+                    "MQ 已确认，SENT 回写异常，taskId=" + taskId
+                            + "，messageId=" + receipt.getMessageId(),
+                    failure
+            );
+        }
+
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "MQ 已确认，SENT 回写未命中，taskId=" + taskId
+            );
+        }
+
+        log.info("消息已发送并标记SENT，taskId={}，messageId={}",
+                taskId, receipt.getMessageId());
     }
 
     private record PendingMessage(String topic, String payload) {
