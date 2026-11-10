@@ -1,6 +1,5 @@
 package com.example.localtaskmessagelearning;
 
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,16 +13,15 @@ public class OrderService {
 
     private final JdbcTemplate jdbcTemplate;
     private final JsonMapper jsonMapper;
-    private final ApplicationEventPublisher publisher;
 
-    public OrderService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper, ApplicationEventPublisher publisher) {
+    public OrderService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
-        this.publisher = publisher;
     }
 
     @Transactional
-    public void createOrder(CreateOrderRequest request) {
+    @LocalTaskMessage
+    public TaskMessageCommand createOrder(CreateOrderRequest request) {
 
         String taskId = UUID.randomUUID().toString();
 
@@ -47,20 +45,7 @@ public class OrderService {
                 request.payAmount()
         );
 
-        jdbcTemplate.update("""
-                        INSERT INTO local_task_message (
-                            task_id, biz_id, topic, payload
-                        )
-                        VALUES (?, ?, ?, ?)
-                        """,
-                taskId,
-                request.orderNo(),
-                "order_created",
-                payload
-        );
-
-        publisher.publishEvent(new TaskMessageCreatedEvent(taskId));
-
+        return new TaskMessageCommand(taskId, request.orderNo(), "order_created", payload);
     }
 
 }
