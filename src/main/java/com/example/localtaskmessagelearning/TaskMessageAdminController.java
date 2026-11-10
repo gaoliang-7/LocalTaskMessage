@@ -46,4 +46,13 @@ public class TaskMessageAdminController {
     public Map<String, Long> stats() {
         return adminService.countByStatus();
     }
+
+    @GetMapping("/page")
+    public TaskMessagePage page(
+            @RequestParam("status") TaskMessageStatus status,
+            @RequestParam(name = "beforeId", required = false) Long beforeId,
+            @RequestParam(name = "limit", defaultValue = "20") int limit) {
+
+        return adminService.findPage(status, beforeId, limit);
+    }
 }
