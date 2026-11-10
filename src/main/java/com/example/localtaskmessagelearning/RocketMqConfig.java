@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.time.Duration;
 import java.util.Map;
@@ -58,6 +59,16 @@ public class RocketMqConfig {
                 .setSubscriptionExpressions(Map.of("order_created", filter))
                 .setMessageListener(listener)
                 .build();
+    }
+
+    @Bean(defaultCandidate = false)
+    public ThreadPoolTaskExecutor taskMessageSendExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(1);
+        executor.setThreadNamePrefix("task-send-");
+        return executor;
     }
 
 }

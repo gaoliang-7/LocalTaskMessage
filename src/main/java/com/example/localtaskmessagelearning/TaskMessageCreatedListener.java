@@ -18,7 +18,7 @@ public class TaskMessageCreatedListener {
         this.sender = sender;
     }
 
-    @Async
+    @Async("taskMessageSendExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCreated(TaskMessageCreatedEvent event) {
         try {
