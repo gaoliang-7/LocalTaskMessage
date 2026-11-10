@@ -20,9 +20,9 @@ public class TaskMessageRegistrar {
     public void register(String taskId, String bizId, String topic, String payload) {
         jdbcTemplate.update("""
                 INSERT INTO local_task_message (
-                    task_id, biz_id, topic, payload
+                    task_id, biz_id, topic, payload, next_retry_time
                 )
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, taskId, bizId, topic, payload);
 
         publisher.publishEvent(new TaskMessageCreatedEvent(taskId));
