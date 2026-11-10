@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-class TaskMessagePageAcceptance {
+class TaskMessagePageTest {
     private static final String PAGE_URL = "/task-messages/page";
 
     private final JsonMapper jsonMapper = JsonMapper.builder().build();

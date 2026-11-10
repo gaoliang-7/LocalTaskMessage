@@ -187,6 +187,35 @@ public class TaskMessageAdminService {
         return counts;
     }
 
+    public List<TaskMessageRetryRecordView> findRetryRecords(String taskId) {
+        List<String> taskIds = jdbcTemplate.queryForList("""
+            SELECT task_id
+            FROM local_task_message
+            WHERE task_id = ?
+            """, String.class, taskId);
+
+        if (taskIds.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在");
+        }
+
+        return jdbcTemplate.query("""
+            SELECT requested_by, reason, previous_retry_count, previous_error, create_time
+            FROM task_message_retry_record
+            WHERE task_id = ?
+            ORDER BY id DESC
+            LIMIT 20
+            """,
+                (rs, rowNum) -> new TaskMessageRetryRecordView(
+                        rs.getString("requested_by"),
+                        rs.getString("reason"),
+                        rs.getInt("previous_retry_count"),
+                        rs.getString("previous_error"),
+                        rs.getObject("create_time", LocalDateTime.class)
+                ),
+                taskIds.get(0)
+        );
+    }
+
     private record RetrySnapshot(
             String taskId,
             String status,

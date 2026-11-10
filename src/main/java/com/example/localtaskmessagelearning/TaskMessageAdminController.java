@@ -55,4 +55,9 @@ public class TaskMessageAdminController {
 
         return adminService.findPage(status, beforeId, limit);
     }
+
+    @GetMapping("/{taskId}/retry-records")
+    public List<TaskMessageRetryRecordView> retryRecords(@PathVariable("taskId") String taskId) {
+        return adminService.findRetryRecords(taskId);
+    }
 }

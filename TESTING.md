@@ -2,10 +2,10 @@
 
 ```powershell
 Set-Location 'H:\LocalTaskMessage\TaskMessage'
-mvn -B test "-Dtest=TaskMessagePropertiesTest,TaskMessageSenderTest,TaskMessageAdminTest,OrderCreatedConsumerTest,TaskMessageQueryTest"
+mvn -B test "-Dtest=TaskMessagePropertiesTest,TaskMessageSenderTest,TaskMessageAdminTest,OrderCreatedConsumerTest,TaskMessageQueryTest,TaskMessagePageTest,TaskMessageRetryRecordsTest"
 ```
 
-预期执行 84 次。参数化方法中的每行数据都计为一次执行。
+预期执行 101 次。参数化方法中的每行数据都计为一次执行。
 
 `TaskMessagePropertiesTest` 用 `ApplicationContextRunner` 创建小容器，验证配置绑定、合法边界、非法范围、跨字段关系、未知键和缺少配置。负向用例会打印配置启动异常，最终 JUnit 结果仍应全部通过。
 
@@ -119,13 +119,35 @@ mvn -B test "-Dtest=TaskMessageQueryTest"
 
 游标分页练习使用 `GET /task-messages/page`。`status` 必填，`limit` 默认为 20，允许 1 到 100。第一页省略 `beforeId`，下一页传入上次响应的 `nextBeforeId`。响应包含 `items` 和 `nextBeforeId`。游标为十进制字符串，最后一页返回 `null`。
 
-通过类名单独运行分页验收。
+分页用例已并入默认回归。也可以通过类名单独运行。
 
 ```powershell
-mvn -B test "-Dtest=TaskMessagePageAcceptance"
+mvn -B test "-Dtest=TaskMessagePageTest"
 ```
 
-接口实现前，12 项用例会因 HTTP 404 失败。实现后应全部通过，覆盖跨页顺序、翻页期间插入新任务、空页、大整数游标和参数校验。
+12 项用例覆盖跨页顺序、翻页期间插入新任务、空页、大整数游标和参数校验。
+
+人工补发历史练习使用 `GET /task-messages/{taskId}/retry-records`。存在的任务返回最多 20 条记录，按记录 id 降序排列。任务还没有补发记录时返回空数组，任务不存在时返回 404。
+
+```powershell
+mvn -B test "-Dtest=TaskMessageRetryRecordsTest"
+```
+
+默认回归包含这 5 项验收，覆盖补发后查询旧错误和失败次数、同一时间戳下的倒序与条数上限、两张表的大小写比较差异、空历史和任务不存在。
+
+分页索引练习单独连接本机 MySQL。在 PowerShell 中提供 `DB_USERNAME` 和 `DB_PASSWORD` 后，可运行对照实验。
+
+```powershell
+mvn -B -o test "-Dtest=TaskMessagePageIndexAcceptance#shouldComparePlansOnTemporaryData"
+```
+
+实验在同一个连接的临时表中放入 10,000 条任务，每 100 条有一条 FAILED。对同一页打印加索引前后的 `key`、`Extra` 和 `EXPLAIN ANALYZE`，并核对两次读取的 21 个 ID 相同。临时表随连接关闭而清理。执行计划由 MySQL 根据数据和索引选择，测试断言结果与索引结构，计划输出用于观察。 [MySQL EXPLAIN](https://dev.mysql.com/doc/refman/8.4/en/explain.html)
+
+在实际任务表加上可见的 `idx_task_status_id (status, id)` 后，通过类名运行两项验收。
+
+```powershell
+mvn -B -o test "-Dtest=TaskMessagePageIndexAcceptance"
+```
 
 在已配置 MySQL 环境变量和 MQ 连接的终端运行默认回归。
 
@@ -133,4 +155,4 @@ mvn -B test "-Dtest=TaskMessagePageAcceptance"
 mvn -B test
 ```
 
-默认回归共执行 85 次，包括完整应用启动测试 `LocalTaskMessageLearningApplicationTests`。在 PowerShell 中运行时，在当前终端提供 `DB_USERNAME`、`DB_PASSWORD`。
+默认回归共执行 102 次，包括完整应用启动测试 `LocalTaskMessageLearningApplicationTests`。在 PowerShell 中运行时，在当前终端提供 `DB_USERNAME`、`DB_PASSWORD`。
