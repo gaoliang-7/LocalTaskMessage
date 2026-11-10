@@ -36,8 +36,6 @@ mvn spring-boot:run
 ```bash
 curl -f http://127.0.0.1:8080/ping
 # TaskMessageLearning is Running!
-
-mvn test
 ```
 
 ## 常见问题
