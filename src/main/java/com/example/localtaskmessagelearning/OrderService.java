@@ -14,15 +14,19 @@ public class OrderService {
     private final JdbcTemplate jdbcTemplate;
     private final JsonMapper jsonMapper;
 
-    public OrderService(JdbcTemplate jdbcTemplate, JsonMapper jsonMapper) {
+    public OrderService(
+            JdbcTemplate jdbcTemplate,
+            JsonMapper jsonMapper
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.jsonMapper = jsonMapper;
     }
 
     @Transactional
     @LocalTaskMessage
-    public TaskMessageCommand createOrder(CreateOrderRequest request) {
-
+    public TaskMessageCommand createOrder(
+            CreateOrderRequest request
+    ) {
         String taskId = UUID.randomUUID().toString();
 
         String payload = jsonMapper.writeValueAsString(
@@ -35,17 +39,21 @@ public class OrderService {
         );
 
         jdbcTemplate.update("""
-                        INSERT INTO biz_order (
-                            order_no, user_id, pay_amount
-                        )
-                        VALUES (?, ?, ?)
-                        """,
+                INSERT INTO biz_order (
+                    order_no, user_id, pay_amount
+                )
+                VALUES (?, ?, ?)
+                """,
                 request.orderNo(),
                 request.userId(),
                 request.payAmount()
         );
 
-        return new TaskMessageCommand(taskId, request.orderNo(), "order_created", payload);
+        return new TaskMessageCommand(
+                taskId,
+                request.orderNo(),
+                OrderCreatedMessage.TOPIC,
+                payload
+        );
     }
-
 }
