@@ -15,4 +15,40 @@ task-message:
   initial-delay-seconds: 10
   max-delay-seconds: 60
   lease-seconds: 30
-  retry-house-numbers: [0, 1]
+
+  retry-groups:
+    - name: house-0
+      house-number: 0
+      batch-size: 20
+      fixed-delay-seconds: 5
+
+    - name: house-1
+      house-number: 1
+      batch-size: 10
+      fixed-delay-seconds: 7
+
+---
+spring:
+  config:
+    activate:
+      on-profile: retry-house-0
+
+task-message:
+  retry-groups:
+    - name: house-0
+      house-number: 0
+      batch-size: 20
+      fixed-delay-seconds: 5
+
+---
+spring:
+  config:
+    activate:
+      on-profile: retry-house-1
+
+task-message:
+  retry-groups:
+    - name: house-1
+      house-number: 1
+      batch-size: 10
+      fixed-delay-seconds: 7
