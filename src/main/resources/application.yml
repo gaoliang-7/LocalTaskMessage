@@ -16,6 +16,12 @@ task-message:
   max-delay-seconds: 60
   lease-seconds: 30
 
+  send-executor:
+    core-pool-size: 1
+    max-pool-size: 1
+    queue-capacity: 1
+    rejection-policy: DEFER_TO_RETRY
+
   retry-groups:
     - name: house-0
       house-number: 0

@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -136,6 +138,7 @@ public class TaskMessageSender {
 //
 //    }
 
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void send(String taskId) throws ClientException {
         String token = UUID.randomUUID().toString();
 

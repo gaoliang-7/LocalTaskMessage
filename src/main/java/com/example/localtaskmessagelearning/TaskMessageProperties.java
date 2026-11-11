@@ -1,7 +1,13 @@
 package com.example.localtaskmessagelearning;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -26,6 +32,10 @@ public record TaskMessageProperties(
 
         @Min(1) @Max(3600)
         int leaseSeconds,
+
+        @NotNull
+        @Valid
+        SendExecutor sendExecutor,
 
         @NotEmpty
         List<@NotNull @Valid RetryGroup> retryGroups
@@ -55,6 +65,33 @@ public record TaskMessageProperties(
         }
 
         return true;
+    }
+
+    public record SendExecutor(
+            @Min(1) @Max(64)
+            int corePoolSize,
+
+            @Min(1) @Max(64)
+            int maxPoolSize,
+
+            @Min(0) @Max(10000)
+            int queueCapacity,
+
+            @NotNull
+            RejectionPolicy rejectionPolicy
+    ) {
+
+        @AssertTrue(
+                message = "max-pool-size 必须大于等于 core-pool-size"
+        )
+        public boolean isPoolSizeValid() {
+            return maxPoolSize >= corePoolSize;
+        }
+    }
+
+    public enum RejectionPolicy {
+        DEFER_TO_RETRY,
+        CALLER_RUNS
     }
 
     public record RetryGroup(
