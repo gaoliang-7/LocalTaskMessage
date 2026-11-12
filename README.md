@@ -27,7 +27,7 @@ mvn spring-boot:run
 
 将数据库用户名和 MQ 地址替换为实际值。`ROCKETMQ_ENDPOINTS` 使用 Proxy 的 gRPC 地址，默认值为 `127.0.0.1:8081`。
 
-在 IDEA 中运行主类 `com.example.localtaskmessagelearning.LocalTaskMessageLearningApplication`，并在运行配置中设置相同的环境变量。
+在 IDEA 中运行主类 `localtaskmessage`，并在运行配置中设置相同的环境变量。
 
 机器相关的 Maven 仓库配置、IDEA 运行配置及服务器连接脚本保存在本机，并通过 `.gitignore` 排除。
 
