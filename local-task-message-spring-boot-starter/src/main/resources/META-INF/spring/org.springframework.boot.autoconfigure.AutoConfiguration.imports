@@ -1,0 +1,2 @@
+com.example.localtaskmessage.taskmessage.autoconfigure.RocketMqTaskMessageAutoConfiguration
+com.example.localtaskmessage.taskmessage.autoconfigure.TaskMessageAutoConfiguration
