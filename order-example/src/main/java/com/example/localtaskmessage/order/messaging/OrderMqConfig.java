@@ -9,9 +9,15 @@ import org.apache.rocketmq.client.apis.consumer.PushConsumer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * 把订单创建 Topic、消费组和消息监听器接到一起。
+ */
 @Configuration(proxyBeanMethods = false)
 public class OrderMqConfig {
 
+    /**
+     * 启动订单消息消费者，应用关闭时释放连接。
+     */
     @Bean(destroyMethod = "close")
     public PushConsumer orderCreatedPushConsumer(
             RocketMqClientFactory clientFactory,

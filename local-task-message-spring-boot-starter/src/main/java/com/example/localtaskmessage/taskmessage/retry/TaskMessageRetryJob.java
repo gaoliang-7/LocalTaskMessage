@@ -10,6 +10,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * 按分片找出到期任务，补发首发遗漏、发送失败和租约过期的消息。
+ */
 public class TaskMessageRetryJob {
 
     private static final Logger log = LoggerFactory.getLogger(TaskMessageRetryJob.class);
@@ -22,6 +25,9 @@ public class TaskMessageRetryJob {
         this.sender = sender;
     }
 
+    /**
+     * 扫描一个补偿组并逐条尝试发送，某条失败不影响本轮其他任务。
+     */
     public void retryGroup(TaskMessageProperties.RetryGroup group) {
         long started = System.nanoTime();
 
@@ -32,6 +38,8 @@ public class TaskMessageRetryJob {
         );
 
         try {
+            // retry_ready_at 是生成列：待发送取重试时间，发送中取租约到期时间。
+            // SENT 和 FAILED 对应 NULL，不参与扫描；每轮重新查，避免漏掉重新到期的任务。
             List<String> taskIds = jdbcTemplate.queryForList("""
                             SELECT task_id
                             FROM local_task_message
@@ -54,6 +62,7 @@ public class TaskMessageRetryJob {
                     taskIds.size()
             );
 
+            // 扫描到的只是候选，最终能否发送仍由 sender 的原子抢占决定。
             for (String taskId : taskIds) {
                 try {
                     sender.send(taskId);

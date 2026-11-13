@@ -13,6 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * 首发和补偿共用的发送流程：先抢任务，发给 MQ，再回写结果。
+ */
 public class TaskMessageSender {
 
     private static final Logger log =
@@ -34,10 +37,17 @@ public class TaskMessageSender {
         log.info("消息任务配置：{}", properties);
     }
 
+    /**
+     * 尝试发送一个到期任务，没抢到就退出；失败时安排下次重试或标记 FAILED。
+     * MQ 已接收但回写失败时，保留租约等补偿，消费端需要按 taskId 去重。
+     */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void send(String taskId) throws Exception {
+        // 挂起调用方事务；提交回调里的 CALLER_RUNS 也不能沿用原事务资源。
         String token = UUID.randomUUID().toString();
 
+        // 用一条 UPDATE 抢占到期任务，避免首发、补偿和多个实例同时发送。
+        // token 标识本次抢占；后续读写都核对 token 和租约，防止旧线程覆盖新结果。
         int claimed = jdbcTemplate.update("""
                 UPDATE local_task_message
                 SET status = 'PROCESSING',
@@ -77,6 +87,7 @@ public class TaskMessageSender {
         TaskMessageTransport.SendResult receipt;
 
         try {
+            // 抢到后再确认租约仍有效，过期或被接管就跳过本次发送。
             List<PendingMessage> tasks = jdbcTemplate.query("""
                     SELECT topic, payload
                     FROM local_task_message
@@ -110,6 +121,8 @@ public class TaskMessageSender {
             );
         } catch (Exception failure) {
             try {
+                // 失败后的等待时间从初始值开始，每次翻倍但不超过最大间隔；次数达到上限则停止重试。
+                // MySQL 按 SET 顺序赋值，retry_count 最后再加一，前面的计算才能用旧次数。
                 int recorded = jdbcTemplate.update("""
                         UPDATE local_task_message
                         SET status = CASE
@@ -155,12 +168,15 @@ public class TaskMessageSender {
                     );
                 }
             } catch (Exception recordFailure) {
+                // 保留最初的发送异常，同时带上回写异常，方便一起排查。
                 failure.addSuppressed(recordFailure);
             }
 
             throw failure;
         }
 
+        // 到这里 MQ 已确认接收，回写异常不能再按“发送失败”处理。
+        // 保留 PROCESSING 和原租约，过期后补发可能产生重复消息，由消费端去重。
         int updated;
 
         try {
@@ -201,6 +217,12 @@ public class TaskMessageSender {
         );
     }
 
+    /**
+     * 抢到任务后，发送给 MQ 所需的内容。
+     *
+     * @param topic 目标 Topic
+     * @param payload 数据库中保存的消息正文
+     */
     private record PendingMessage(
             String topic,
             String payload

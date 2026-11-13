@@ -13,6 +13,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 查询消息任务、统计状态，并把人工补发的任务重新交给定时补偿。
+ */
 @Service
 public class TaskMessageAdminService {
 
@@ -22,6 +25,9 @@ public class TaskMessageAdminService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * 查询最近 20 条已停止自动重试的任务。
+     */
     public List<FailedTaskView> findFailed() {
         return jdbcTemplate.query("""
                 SELECT task_id, biz_id, topic,
@@ -42,8 +48,12 @@ public class TaskMessageAdminService {
         );
     }
 
+    /**
+     * 把 FAILED 任务重置为待发送，同时保存补发记录；实际发送由补偿任务完成。
+     */
     @Transactional
     public void retry(String taskId, RetryTaskRequest request) {
+        // 先锁住这条任务，避免两次人工补发同时修改状态或记录不一致的旧值。
         List<RetrySnapshot> tasks = jdbcTemplate.query("""
                 SELECT task_id, status, retry_count, last_error
                 FROM local_task_message
@@ -75,6 +85,7 @@ public class TaskMessageAdminService {
             );
         }
 
+        // 失败次数清零并设为立即到期，补偿扫描时就能重新尝试发送。
         int updated = jdbcTemplate.update("""
                 UPDATE local_task_message
                 SET status = 'PENDING',
@@ -96,6 +107,7 @@ public class TaskMessageAdminService {
             );
         }
 
+        // 保存重置前的次数和错误；记录失败时，前面的状态重置也一起回滚。
         jdbcTemplate.update("""
                 INSERT INTO task_message_retry_record (
                     task_id,
@@ -115,10 +127,16 @@ public class TaskMessageAdminService {
 
     }
 
+    /**
+     * 按状态取最新 20 条任务，更多数据通过分页接口查询。
+     */
     public List<TaskMessageView> findByStatus(TaskMessageStatus status) {
         return findPage(status, null, 20).items();
     }
 
+    /**
+     * 按状态和数据库 ID 倒序翻页，不传 beforeId 时从最新任务开始。
+     */
     public TaskMessagePage findPage(TaskMessageStatus status, Long beforeId, int limit) {
         if (limit < 1 || limit >100) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit 必须在 1 到 100 之间");
@@ -128,8 +146,10 @@ public class TaskMessageAdminService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "beforeId 必须大于 0");
         }
 
+        // beforeId 是上一页最后一条的 ID，减一后查询，避免两页边界重复。
         long upperId = beforeId == null ? Long.MAX_VALUE : beforeId - 1;
 
+        // 多查一条来判断还有没有下一页，返回时只保留 limit 条。
         List<PageRow> rows = jdbcTemplate.query("""
             SELECT id, task_id, biz_id, topic, status, retry_count,
                    next_retry_time, locked_until, last_error, update_time
@@ -164,6 +184,9 @@ public class TaskMessageAdminService {
         return new TaskMessagePage(items, nextBeforeId);
     }
 
+    /**
+     * 统计每种状态的任务数，没有记录的状态也返回 0。
+     */
     public Map<String, Long> countByStatus() {
         Map<String, Long> counts = new LinkedHashMap<>();
 
@@ -187,7 +210,11 @@ public class TaskMessageAdminService {
         return counts;
     }
 
+    /**
+     * 查询任务最近 20 次人工补发记录；任务不存在时返回 404。
+     */
     public List<TaskMessageRetryRecordView> findRetryRecords(String taskId) {
+        // 先区分“任务不存在”和“任务存在但没有人工补发记录”。
         List<String> taskIds = jdbcTemplate.queryForList("""
             SELECT task_id
             FROM local_task_message
@@ -216,6 +243,14 @@ public class TaskMessageAdminService {
         );
     }
 
+    /**
+     * 锁住任务后读出的旧值，供状态检查和补发记录使用。
+     *
+     * @param taskId 要补发的任务 ID
+     * @param status 重置前的任务状态，只有 FAILED 允许补发
+     * @param retryCount 重置前的累计发送失败次数
+     * @param lastError 重置前记录的错误
+     */
     private record RetrySnapshot(
             String taskId,
             String status,
@@ -223,6 +258,12 @@ public class TaskMessageAdminService {
             String lastError
     ) {}
 
+    /**
+     * 分页查询时同时保留数据库 ID 和展示数据。
+     *
+     * @param id 数据库主键，用来计算下一页游标
+     * @param item 对外返回的任务信息
+     */
     private record PageRow(long id, TaskMessageView item) {}
 
 }

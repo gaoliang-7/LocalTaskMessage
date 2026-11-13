@@ -9,6 +9,9 @@ import org.apache.rocketmq.client.apis.producer.SendReceipt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * 使用 RocketMQ 发送消息，把 Broker 回执交回任务发送器。
+ */
 public class RocketMqTaskMessageTransport implements TaskMessageTransport{
 
     private final Logger log = LoggerFactory.getLogger(RocketMqTaskMessageTransport.class);
@@ -22,6 +25,9 @@ public class RocketMqTaskMessageTransport implements TaskMessageTransport{
         this.producer = producer;
     }
 
+    /**
+     * 同步等待 Broker 确认接收；消费端是否处理成功不在这里判断。
+     */
     @Override
     public SendResult send(String taskId, String topic, String payload) throws ClientException {
         Message message = clientFactory.createMessage(

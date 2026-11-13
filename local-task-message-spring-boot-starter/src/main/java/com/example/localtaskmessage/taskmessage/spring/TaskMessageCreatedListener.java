@@ -11,6 +11,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+/**
+ * 事务提交后，把新消息交给首发线程池；没能发出的任务由定时补偿接手。
+ */
 public class TaskMessageCreatedListener {
 
     private static final Logger log = LoggerFactory.getLogger(TaskMessageCreatedListener.class);
@@ -25,11 +28,15 @@ public class TaskMessageCreatedListener {
         this.executor = executor;
     }
 
+    /**
+     * 等订单和任务都提交成功后，再尝试把发送工作放进线程池。
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onCreated(TaskMessageCreatedEvent event) {
         try {
             executor.execute(() -> send(event.taskId()));
         } catch (TaskRejectedException rejected) {
+            // 入队失败时任务仍是 PENDING，不增加发送失败次数，留给补偿扫描。
             log.warn(
                     "首发未入队，交由补偿，taskId={}，"
                             + "activeCount={}，queueSize={}",
@@ -40,6 +47,9 @@ public class TaskMessageCreatedListener {
         }
     }
 
+    /**
+     * 执行一次首发并记录异常，后续是否重试由发送器和补偿任务决定。
+     */
     private void send(String taskId) {
         try {
             log.info(

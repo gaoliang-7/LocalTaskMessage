@@ -33,6 +33,9 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import javax.sql.DataSource;
 
+/**
+ * 复用宿主的数据源和事务管理器，创建消息登记、发送和补偿所需的组件。
+ */
 @AutoConfiguration(
         after = {
                 JdbcTemplateAutoConfiguration.class,
@@ -45,6 +48,7 @@ import javax.sql.DataSource;
 @ConditionalOnSingleCandidate(DataSource.class)
 @ConditionalOnBean({JdbcTemplate.class, PlatformTransactionManager.class, TaskMessageTransport.class})
 @EnableConfigurationProperties(TaskMessageProperties.class)
+// 事务先于消息切面执行，让业务写入和消息登记落在同一个事务里。
 @EnableTransactionManagement(order = 0, proxyTargetClass = true)
 @EnableAspectJAutoProxy(proxyTargetClass = true)
 @Import({TaskMessageExecutionConfig.class, TaskMessageRetrySchedulingConfig.class})
@@ -52,6 +56,9 @@ public class TaskMessageAutoConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(TaskMessageAutoConfiguration.class);
 
+    /**
+     * 用宿主的 JdbcTemplate 创建登记器，跟业务写入共用数据源。
+     */
     @Bean
     @ConditionalOnMissingBean
     public TaskMessageRegistrar taskMessageRegistrar(
@@ -65,6 +72,9 @@ public class TaskMessageAutoConfiguration {
         return new TaskMessageRegistrar(jdbcTemplate, publisher);
     }
 
+    /**
+     * 创建首发和补偿共用的发送器，统一处理抢占和结果回写。
+     */
     @Bean
     @ConditionalOnMissingBean
     public TaskMessageSender taskMessageSender(
@@ -75,18 +85,27 @@ public class TaskMessageAutoConfiguration {
         return new TaskMessageSender(jdbcTemplate, transport, properties);
     }
 
+    /**
+     * 创建扫描到期任务的补偿入口。
+     */
     @Bean
     @ConditionalOnMissingBean
     public TaskMessageRetryJob taskMessageRetryJob(JdbcTemplate jdbcTemplate, TaskMessageSender sender) {
         return new TaskMessageRetryJob(jdbcTemplate, sender);
     }
 
+    /**
+     * 让 @LocalTaskMessage 方法在返回后自动登记消息。
+     */
     @Bean
     @ConditionalOnMissingBean
     public LocalTaskMessageAspect localTaskMessageAspect(TaskMessageRegistrar registrar) {
         return new LocalTaskMessageAspect(registrar);
     }
 
+    /**
+     * 把事务提交后的消息事件接到首发线程池。
+     */
     @Bean
     @ConditionalOnMissingBean
     public TaskMessageCreatedListener taskMessageCreatedListener(
